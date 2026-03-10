@@ -67,15 +67,11 @@ def centraldifference_X(field,grid):
     #normal field and grid ---> returns dual field and grid
     return (field[1:,:]-field[:-1,:])/grid
 
-def Yee_2D_update_equations_Vacuum_(fieldx,
-                                    fieldy,
-                                    fieldz,
-                                    sourcefield,
-                                    gridx=1,
-                                    gridy=1,
-                                    dualgridx=1,
-                                    dualgridy=1,
-                                    timestep=1):
+def Yee_2D_update_equations_Full():
+    """
+    This is with equation
+    
+    """
     
     # we assume fieldz is normal grid and fieldx and fieldy dualgrid
 

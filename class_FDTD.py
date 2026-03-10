@@ -25,6 +25,7 @@ class FDTD_2D_TM:
         self.initialize_grids()
         self.initialize_Time_simulation
         self.initialize_Fields()
+        self.initialize_Auxiliary_variables
         self.initialize_PML()
 
     def Full_Automatic(self):
@@ -201,19 +202,49 @@ class FDTD_2D_TM:
         print(f"the simulation simulates over a period of{self.Total_Time_Simulation_s} s")
 
     
-
+    
     def initialize_Fields(self):
         print("initializing fields")
         self.Choose_FDTD_Method()
         
+        # Ask on if they are staggered or not,
+
         if self.FDTD_Method==self.Yee:
             self.E_Field_Z = np.zeros( np.shape( self.center_coord_X_mesh_cell_m ) )            #dim ( Nx-1, Ny-1 )
-            self.H_Field_X = np.zeros( np.shape( self.horizontal_edges_coord_X_mesh_cell_m ) )  #dim ( Nx-1, Ny )
-            self.H_Field_Y = np.zeros( np.shape(self.vertical_edges_coord_X_mesh_cell_m ) )     #dim ( Nx, Ny-1 )
-            self.J_Field_Z = np.zeros( np.shape( self.center_coord_X_mesh_cell_m ) )            #dim ( Nx-1, Ny-1 )
+            self.H_Field_X = np.zeros( np.shape( self.horizontal_edges_coord_X_mesh_cell_m ) )  #dim ( Nx-1, Ny )   staggered in time with E
+            self.H_Field_Y = np.zeros( np.shape(self.vertical_edges_coord_X_mesh_cell_m ) )     #dim ( Nx, Ny-1 )   staggered in time with E
+            self.J_Field_Z = np.zeros( np.shape( self.center_coord_X_mesh_cell_m ) )            #dim ( Nx-1, Ny-1 ) staggered in time with E
+
+            self.Auxiliary_E_Field_Z = self.E_Field_Z.copy()            #coolocal in time with E
+            self.Double_Auxiliary_E_Field_Z = self.E_Field_Z.copy()      #staggered in time with E
+
+            self.Auxiliary_H_Field_X = self.H_Field_X.copy()  
+            self.Auxiliary_H_Field_Y = self.H_Field_Y.copy()
 
         if self.FDTD_Method==self.Fully_Collocated:
             pass
+
+    # THIS CAN BE CHANGED INTO A SEPERATE CLASS THAT CREATES SCATTERERS
+    # DO THIS LATER
+    def initialize_Auxiliary_variables(self):
+        """
+        equations: 2.112-2.132 
+            
+        """
+        print("adding auxilary variables")
+
+        #idea. we need to work with masks from such that 
+
+        self.Impedance_Vacuum_SI = np.sqrt(mu_vacuum_scalar_SI/
+                                            epsilon_vacuum_scalar_SI)
+        self.Polarization_Damping= 0                                       #gamma coefficient
+        self.conductivity = 0 
+
+        self.Time_Step_Tau_m =( Speed_Of_Light 
+                                * self.Time_Step_s )
+
+
+            
 
 
 
@@ -247,15 +278,29 @@ class FDTD_2D_TM:
             self.PML_real_stretch_parameter_max= input(f"The max value of the real stretch Parameters")
 
         self.PML_imaginary_stretch_parameter_max=...#(power+1)/150 pi spatial_step
-
+        
+        self.PML_real_stretch_parameter_per_layer_X = [for layer in range(1,self.PML_number_of_layers + 1): 1  
+                                                       
+                                                       ] 
         # Look for a 
         self.PML_imaginary_stretch_parameter = self.PML_imaginary_stretch_parameter_max 
 
     def Stability_Condition_time_FDTD( dx, dy, CFL ):
         return CFL/np.sqrt(1/dx**2+1/dy**2)
     
+    
+    def Update_equations(self):
+        """
 
-    def Yee_update_
+        This is with equations.2.139-2.140 and then update with 2.133--2.138 in the course
+
+        """
+        
+        if self.FDTD_Method==self.Yee:
+            pass
+            # underneath
+        pass
+
         
 
 

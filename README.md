@@ -21,5 +21,6 @@ MMM_PROJECT
 * initialized timesimulation
 * created function that lets you run the program fully automatically or you can choose the parameters instead.
 
-* 
+## UPDATE BORO MAR 10
+* gwn functie dat ade initialiseert.
 
