@@ -222,7 +222,16 @@ class FDTD_2D_TM:
             self.Auxiliary_H_Field_Y = self.H_Field_Y.copy()
 
         if self.FDTD_Method==self.Fully_Collocated:
-            pass
+            self.E_Field_Z = np.zeros( np.shape( self.center_coord_X_mesh_cell_m ) )            #dim ( Nx-1, Ny-1 )
+            self.H_Field_X = self.E_Field_Z.copy() 
+            self.H_Field_Y = self.E_Field_Z.copy() 
+            self.J_Field_Z = self.E_Field_Z.copy() 
+
+            self.Auxiliary_E_Field_Z = self.E_Field_Z.copy()            #coolocal in time with E
+            self.Double_Auxiliary_E_Field_Z = self.E_Field_Z.copy()      #staggered in time with E
+
+            self.Auxiliary_H_Field_X = self.E_Field_Z.copy() 
+            self.Auxiliary_H_Field_Y = self.E_Field_Z.copy() 
 
     # THIS CAN BE CHANGED INTO A SEPERATE CLASS THAT CREATES SCATTERERS
     # DO THIS LATER
@@ -299,7 +308,8 @@ class FDTD_2D_TM:
         if self.FDTD_Method==self.Yee:
             pass
             # underneath
-        pass
+        if self.FDTD_Method == self.Fully_Collocated:
+
 
         
 
