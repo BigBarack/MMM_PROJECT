@@ -16,9 +16,6 @@ def create_measurement_folder(base_dir='Code/figures'):
     print(f"Created folder: {folder_path}")
     return folder_path, timestamp
 
-# ============================================================
-# 1. GRID GENERATION FUNCTIONS
-# ============================================================
 
 def generate_graded_array(N, dx_min, dx_max, strength, symmetric=True):
     """Create smoothly graded step array: fine at center, coarse at edges."""
@@ -46,9 +43,7 @@ def create_dual_steps(array):
     dual[-1] = 2.0 * array[-1] * array[0] / (array[-1] + array[0])
     return dual
 
-# ============================================================
-# 2. MATRIX CONSTRUCTION FUNCTIONS
-# ============================================================
+
 
 def build_difference_matrix(N):
     """Build periodic first-difference matrix."""
@@ -95,6 +90,12 @@ def build_hodge_operators_pml(Nx, Ny, dx_array, dy_array, dx_dual, dy_dual,
     hodge_c_yz = sparse.kron(-diag_x_inv @ d_x, I_y)
     hodge_c_zx = sparse.kron(-A_x, diag_y_inv @ d_y)
     hodge_c_zy = sparse.kron(diag_x_inv @ d_x, A_y)
+    
+    # PML conductivity matrices
+    Se_x = pml.Sigma_e_x
+    Se_y = pml.Sigma_e_y
+    Sm_x = pml.Sigma_m_x
+    Sm_y = pml.Sigma_m_y
 
     S_ex_averaged = pml.Sigma_e_x @ sparse.kron(A_x, A_y)
     S_my_averaged = pml.Sigma_m_y @ sparse.kron(I_x, A_y)
@@ -161,10 +162,9 @@ class FCIFDTD:
         self.dx_dual = create_dual_steps(self.dx_array)
         self.dy_dual = create_dual_steps(self.dy_array)
         
-        # Time step (based on minimum spacing for stability)
         self.dt = CFL / (self.C0 * np.sqrt(1/dx_min**2 + 1/dx_min**2))
         
-        # Source location
+        
         self.source_x = Nx // 2
         self.source_y = Ny // 2
         self.source_index = self.source_x * Ny + self.source_y
@@ -258,7 +258,7 @@ class FCIFDTDPML:
         self.pml = PMLProfile(Nx, Ny, self.dx_array, self.dy_array,
                               pml_width_x, pml_width_y, EPS0, MU0)
         
-        
+        # Build system matrices
         print("Building PML system matrices...")
         self.Mleft, self.Mright = build_hodge_operators_pml(
             Nx, Ny, self.dx_array, self.dy_array,
@@ -280,9 +280,9 @@ class FCIFDTDPML:
         fields_old = self.fields.copy()
         rhs = self.Mright @ fields_old
         
-
+        # Inject source into both Ezx and Ezy (split equally)
         source = get_source_value(n * self.dt, self.dt)
-        rhs[2*self.N + self.source_index] += source / 2
+        rhs[2*self.N + self.source_index] -= source / 2
         rhs[3*self.N + self.source_index] -= source / 2
         
         self.fields = self.solver(rhs)
@@ -322,7 +322,7 @@ class PMLProfile:
         self.Ny = Ny
         self.N = Nx * Ny
         
-        
+        # Number of PML cells
         self.Nx_pml = int(pml_width_x / np.mean(dx_array)) if pml_width_x > 0 else 0
         self.Ny_pml = int(pml_width_y / np.mean(dy_array)) if pml_width_y > 0 else 0
         
@@ -348,7 +348,7 @@ class PMLProfile:
             sigma_e_x[Nx - self.Nx_pml:] = sigma_max_x * factor_r
             sigma_m_x[Nx - self.Nx_pml:] = sigma_max_x * (MU0 / EPS0) * factor_r
 
-       
+        # --- Vectorized Y-direction PML ---
         sigma_e_y = np.zeros(Ny)
         sigma_m_y = np.zeros(Ny)
 
@@ -368,19 +368,19 @@ class PMLProfile:
             sigma_e_y[Ny - self.Ny_pml:] = sigma_max_y * factor_t
             sigma_m_y[Ny - self.Ny_pml:] = sigma_max_y * (MU0 / EPS0) * factor_t
         
-       
+        # Create 2D conductivity arrays (for visualization)
         self.sigma_e_x_2d = np.tile(sigma_e_x[:, np.newaxis], (1, Ny))
         self.sigma_e_y_2d = np.tile(sigma_e_y[np.newaxis, :], (Nx, 1))
         self.sigma_m_x_2d = np.tile(sigma_m_x[:, np.newaxis], (1, Ny))
         self.sigma_m_y_2d = np.tile(sigma_m_y[np.newaxis, :], (Nx, 1))
         
-        
+        # Flatten for diagonal matrices
         self.sigma_e_x_flat = self.sigma_e_x_2d.ravel()
         self.sigma_e_y_flat = self.sigma_e_y_2d.ravel()
         self.sigma_m_x_flat = self.sigma_m_x_2d.ravel()
         self.sigma_m_y_flat = self.sigma_m_y_2d.ravel()
         
-        
+        # Create sparse diagonal matrices
         self.Sigma_e_x = sparse.diags(self.sigma_e_x_flat, format='csc')
         self.Sigma_e_y = sparse.diags(self.sigma_e_y_flat, format='csc')
         self.Sigma_m_x = sparse.diags(self.sigma_m_x_flat, format='csc')
@@ -428,6 +428,10 @@ def plot_grid(dx_array, dy_array, Nx, Ny, folder_path, timestamp):
     center_y = y_pos[Ny//2]
     
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    
+    # --- Row 1: Grid visualizations ---
+    
+    # Full grid overview
     ax1 = axes[0, 0]
     step = max(1, Nx//40)
     for i in range(0, Nx+1, step):
@@ -440,7 +444,7 @@ def plot_grid(dx_array, dy_array, Nx, Ny, folder_path, timestamp):
     ax1.set_xlabel('x'); ax1.set_ylabel('y')
     ax1.legend()
     
-
+    # Center zoom (FINE) - show 10 cells around center
     ax2 = axes[0, 1]
     z = 5
     i_start, i_end = Nx//2 - z, Nx//2 + z + 1
@@ -471,9 +475,11 @@ def plot_grid(dx_array, dy_array, Nx, Ny, folder_path, timestamp):
     ax2.set_title(f'CENTER: Fine Grid\nCell size ≈ {dx_array[Nx//2]:.4f}')
     ax2.set_xlabel('x'); ax2.set_ylabel('y')
     
+    # Edge zoom (COARSE) - FIXED: Show corner region with few cells
     ax3 = axes[0, 2]
     
-  
+    # For edge, show the SAME number of cells as center (z*2 = 10 cells)
+    # This makes the physical size difference obvious
     edge_z = z  # Same cell count as center
     i_start_e, i_end_e = 0, 2*edge_z + 1  # 0 to 10 (11 lines, 10 cells)
     j_start_e, j_end_e = 0, 2*edge_z + 1
@@ -622,10 +628,8 @@ def save_metadata(sim, folder_path, timestamp, Nt, save_every,grading_strength):
     print(f"Saved metadata: {filepath}")
     return filepath
 
-
-
 if __name__ == "__main__":
-    #geen zorgen maken hier runt je programma
+
     folder_path, timestamp = create_measurement_folder(base_dir='measurementsFCI')
     
     Nx, Ny = 101, 101
@@ -644,6 +648,7 @@ if __name__ == "__main__":
     simulation_width = np.sum(dx_array)
     simulation_height = np.sum(dy_array)
 
+  
     plot_grid(dx_array, dy_array, Nx, Ny, folder_path, timestamp)
     
    
@@ -651,7 +656,7 @@ if __name__ == "__main__":
     print("STARTING FCI FDTD WITH PML")
     print("="*50)
     
-
+   
     pml_wx = simulation_width * 0.2
     pml_wy = simulation_height * 0.2
     
@@ -659,7 +664,9 @@ if __name__ == "__main__":
                      dx_min=dx_min, dx_max_factor=5.0,
                      grading_strength=grading_strength,
                      pml_width_x=pml_wx, pml_width_y=pml_wy,
-                    ) 
+                    )  # Use normalized units for testing
+    
+    # Visualize PML profiles
     sim.pml.plot_profiles(folder_path, timestamp)
     
     Ez_history = sim.run(save_every=2)
