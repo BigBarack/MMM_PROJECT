@@ -45,17 +45,31 @@ def create_dual_steps(array):
 
 
 
-def build_difference_matrix(N):
+def build_difference_matrix(N,bc='periodic'):
     """Build periodic first-difference matrix."""
     D = sparse.diags([-1, 1], [0, 1], shape=(N, N), format='lil')
-    D[-1, 0] = 1
+    if bc == 'periodic':
+        D[-1, 0] = 1
+
+    elif bc == 'pec':
+        D[-1,-1]=1
+        D[-1,-2]=-1
+        D[0,0] = 1
+        D[0,1] = -1
     return D.tocsc()
 
 
-def build_average_matrix(N):
+def build_average_matrix(N,bc = 'periodic'):
     """Build periodic averaging matrix."""
     A = sparse.diags([0.5, 0.5], [0, 1], shape=(N, N), format='lil')
-    A[-1, 0] = 0.5
+    if bc == 'periodic':
+        A[-1, 0] = 0.5
+    elif bc == 'pec':
+        A[0, 0] = 1.0
+        A[0, 1] = 0.0
+        A[-1, -1] = 1.0
+        A[-1, -2] = 0.0
+
     return A.tocsc()
 
 
@@ -106,21 +120,111 @@ def build_hodge_operators_pml(Nx, Ny, dx_array, dy_array, dx_dual, dy_dual,
     
     # Left matrix (implicit)
     Mleft = sparse.bmat([
-        [hodge_mu_xx/dt + S_my_averaged/2, None,                     -hodge_c_xz/2,            -hodge_c_xz/2           ],
-        [None,                     hodge_mu_yy/dt +S_mx_averaged/2,  -hodge_c_yz/2,            -hodge_c_yz/2           ],
-        [None,             hodge_c_zy/2,                     hodge_eps_zz/dt + S_ex_averaged/2, None                    ],
-        [hodge_c_zx/2,                     None,             None,                     hodge_eps_zz/dt + S_ey_averaged/2]
+        [hodge_mu_xx/dt + S_my_averaged/2, None,                    - hodge_c_xz/2,            -hodge_c_xz/2           ],
+        [None,                     hodge_mu_yy/dt +S_mx_averaged/2, - hodge_c_yz/2,           - hodge_c_yz/2           ],
+        [None,             hodge_c_zy/2,                     hodge_eps_zz/dt + S_ey_averaged/2, None                    ],
+        [hodge_c_zx/2,                     None,             None,                     hodge_eps_zz/dt + S_ex_averaged/2]
     ], format='csc')
     
     # Right matrix (explicit)
     Mright = sparse.bmat([
         [hodge_mu_xx/dt -S_my_averaged/2, None,                     hodge_c_xz/2,             hodge_c_xz/2            ],
         [None,                     hodge_mu_yy/dt - S_mx_averaged/2,  hodge_c_yz/2,             hodge_c_yz/2            ],
-        [None,            -hodge_c_zy/2,                     hodge_eps_zz/dt - S_ex_averaged/2, None                    ],
-        [-hodge_c_zx/2,                    None,            None,                     hodge_eps_zz/dt - S_ey_averaged/2]
+        [None,            -hodge_c_zy/2,                     hodge_eps_zz/dt - S_ey_averaged/2, None                    ],
+        [-hodge_c_zx/2,                    None,            None,                     hodge_eps_zz/dt - S_ex_averaged/2]
     ], format='csc')
     
     return Mleft, Mright
+
+def build_hodge_operators_ADE(Nx, Ny, dx_array, dy_array, dx_dual, dy_dual,
+                              pml, EPS0, MU0, dt):
+    """
+    Build Hodge operators for FCI FDTD with split-field PML.
+    
+    Fields: [Hxgrid, Hygrid,Hxdotgrid,Hydotgrid, Eztildegrid,Eztildedotgrid eztildedotdotgrid,Jc] where Ez = Ezx + Ezy
+    """
+    
+    I_x = sparse.eye(Nx, format='csc')
+    I_y = sparse.eye(Ny, format='csc')
+    N = Nx * Ny
+    
+    diag_x_inv = sparse.diags(1.0 / dx_array, format='csc')
+    diag_y_inv = sparse.diags(1.0 / dy_array, format='csc')
+
+    diag_x_dual = sparse.diags( dx_dual, format='csc')
+    diag_y_dual = sparse.diags( dy_dual, format='csc')
+    diag_x_dualinv = sparse.diags(1.0 / dx_dual, format='csc')
+    diag_y_dualinv = sparse.diags(1.0 / dy_dual, format='csc')
+    
+    d_x = build_difference_matrix(Nx)
+    d_y = build_difference_matrix(Ny)
+    A_x = build_average_matrix(Nx)
+    A_y = build_average_matrix(Ny)
+    
+    # Hodge operators (no PML in mu/eps)
+    hodge_xx =  sparse.kron(I_x, A_y)
+    hodge_yy =  sparse.kron(A_x, I_y)
+    hodge_zz = sparse.kron(A_x, A_y)
+    
+    # Curl operators
+    #TODO nog delen of vermenigvuldigen met duals
+    hodge_c_xz = sparse.kron(I_x, diag_y_inv @ d_y)
+    hodge_c_yz = sparse.kron(-diag_x_inv @ d_x, I_y)
+    hodge_c_zx = sparse.kron(-A_x, diag_y_inv @ d_y)
+    hodge_c_zy = sparse.kron(diag_x_inv @ d_x, A_y)
+    
+    # PML conductivity matrices
+    Se_x = pml.Sigma_e_x
+    Se_y = pml.Sigma_e_y
+    Sm_x = pml.Sigma_m_x
+    Sm_y = pml.Sigma_m_y
+
+    dtau = ...
+    S_x_averaged = ... 
+    S_y_averaged = ...
+    K_x_averaged = ... 
+    K_y_averaged = ...
+
+    dc_cond=...
+    gamma=...
+    betay_pl = K_y_averaged/dtau + S_y_averaged/2
+    betay_m = K_y_averaged/dtau - S_y_averaged/2
+    betax_pl = K_x_averaged/dtau + S_x_averaged/2
+    betax_m = K_x_averaged/dtau - S_x_averaged/2
+    alfap= gamma/dtau +1/2
+    alfam= gamma/dtau -1/2
+    # --- Build 4x4 block system for [Hx, Hy, Ezx, Ezy] ---
+    
+    # Left matrix (implicit)
+    #TODO doe delta t hierin expliciet
+    Mleft = sparse.bmat([
+        [ hodge_xx/dtau, None             , -betax_pl* hodge_xx, None              , None              , None             , None                 , None           ],
+        [ None         , betax_pl*hodge_yy, None               , -betay_pl*hodge_yy, None              , None             , None                 , None           ],
+        [ None         , None             , betay_pl*hodge_xx  , None              , -hodge_c_xz/2     , None             , None                 , None           ],
+        [ None         , None             , None               , hodge_yy/dtau     , -hodge_c_yz/2     , None             , None                 , None           ],
+        [ None         , None             , None               , None              , betay_pl*hodge_zz , -hodge_zz/dtau   , None                 , None           ],
+        [ None         , None             , None               , None              , None              , betax_pl*hodge_zz, -hodge_zz/dtau       , None           ],
+        [ hodge_c_zx   , hodge_c_zy       , None               , None              , None              , None             , hodge_zz/dtau        , -hodge_zz/2    ],
+        [ None         , None             , None               , None              , None              , None             , -dc_cond/2*(hodge_zz), alfap*hodge_zz ]
+    ], format='csc')
+    
+    # Right matrix (explicit)
+    Mright = sparse.bmat([
+        [ hodge_xx/dtau, None            , -betax_m* hodge_xx, None              , None             , None             , None                 , None           ],
+        [ None         , betax_m*hodge_yy, None              , -betay_m*hodge_yy , None             , None             , None                 , None           ],
+        [ None         , None            , betay_m*hodge_xx  , None              , hodge_c_xz/2     , None             , None                 , None           ],
+        [ None         , None            , None              , hodge_yy/dtau     , hodge_c_yz/2     , None             , None                 , None           ],
+        [ None         , None            , None              , None              , betay_m*hodge_zz , -hodge_zz/dtau   , None                 , None           ],
+        [ None         , None            , None              , None              , None             , betax_m*hodge_zz , -hodge_zz/dtau       , None           ],
+        [ -hodge_c_zx  , -hodge_c_zy     , None              , None              , None             , None             , hodge_zz/dtau        , -hodge_zz/2    ],
+        [ None         , None            , None              , None              , None             , None             , dc_cond/2*(hodge_zz) , alfam*hodge_zz ]
+    ], format='csc')
+    
+    return Mleft, Mright
+
+
+
+
 
 def get_source_value(t, dt):
     """Gaussian pulse source."""
@@ -129,7 +233,8 @@ def get_source_value(t, dt):
     return   np.exp(-((t - t0)**2) / (2 * sigma**2))
 
 
-
+class observer:
+    """initializes  your observer and saves observing data"""
 
 class FCIFDTD:
     """Fully Collocated Implicit FDTD solver."""
@@ -282,8 +387,8 @@ class FCIFDTDPML:
         
         # Inject source into both Ezx and Ezy (split equally)
         source = get_source_value(n * self.dt, self.dt)
-        rhs[2*self.N + self.source_index] -= source / 2
-        rhs[3*self.N + self.source_index] -= source / 2
+        rhs[3*self.N + self.source_index] -= source/2
+        rhs[2*self.N + self.source_index] -= source/2
         
         self.fields = self.solver(rhs)
         return self.fields
@@ -328,8 +433,8 @@ class PMLProfile:
         
         eta0 = np.sqrt(MU0 / EPS0)
 
-        sigma_e_x = np.zeros(Nx)
-        sigma_m_x = np.zeros(Nx)
+        sigma_x = np.zeros(self.Nx)
+        sigma_y = np.zeros(self.Ny)
         
         if self.Nx_pml > 0:
             sigma_max_x = 10*(m + 1) / (2 * eta0 * pml_width_x)
@@ -345,8 +450,7 @@ class PMLProfile:
             
             # Right edge profile
             factor_r = ((i_right - (Nx - self.Nx_pml) + 1) / self.Nx_pml) ** m
-            sigma_e_x[Nx - self.Nx_pml:] = sigma_max_x * factor_r
-            sigma_m_x[Nx - self.Nx_pml:] = sigma_max_x * (MU0 / EPS0) * factor_r
+            sigma_x[Nx - self.Nx_pml:] = sigma_max_x * factor_r
 
         # --- Vectorized Y-direction PML ---
         sigma_e_y = np.zeros(Ny)
@@ -415,6 +519,60 @@ class PMLProfile:
         plt.show()
         print(f"Saved PML profiles: {filepath}")
         return filepath
+
+
+class Scatterer:
+    def __init__(self , shape:str , material:str , ID:int , geometry:dict , properties:dict ):
+        self.shape = shape
+        self.ID = ID                    #useful for up-eq and mask
+        self.material = material        #pec / pmc / drude
+        self.geometry = geometry        #depends on shape
+        self.properties = properties    #e,m,sigma_DC,gamma
+
+    def get_bounds(self):
+        """
+        for given scatterer, it gives the x-range and y-range
+        to be used for defining refinement regions and masks
+        """
+        if self.shape == 'circle':
+            xc = self.geometry['center'][0]
+            x_range = ( xc - self.geometry['radius'] , xc + self.geometry['radius'] )
+            # y_range = x_range
+            return x_range, x_range
+        elif self.shape == 'rectangle':
+            x_range = ( self.geometry['xi'], self.geometry['xf'] )
+            y_range = ( self.geometry['yi'], self.geometry['yf'] )
+            return x_range, y_range
+
+    def is_inside(self,X,Y):
+        """
+        for given X,Y return boolean if it is inside scatterer. Used for the mask creation after having the grid
+        :param X: point or array
+        :param Y: point or array
+        :return: same shape as inputs (better to use arrays)
+        """
+        if self.shape == 'rectangle':
+            x_min , x_max = self.geometry['xi'], self.geometry['xf']
+            y_min , y_max = self.geometry['yi'], self.geometry['yf']
+            return (X >= x_min) & (X <= x_max) & (Y >= y_min) & (Y <= y_max)
+        elif self.shape == 'circle':
+            xc , yc  = self.geometry['center']
+            r = self.geometry['radius']
+            return ( (X - xc)**2 + (Y - yc)**2 ) <= r**2
+
+class ObservationPoint:
+    def __init__(self,x,y):
+        self.x = x
+        self.y = y
+        self.hx_values = []
+        self.hy_values = []
+        self.ez_values = []
+        self.coordinates = {}
+
+    def add_sample(self,hx,hy,ez):
+        self.hx_values.append(hx)
+        self.hy_values.append(hy)
+        self.ez_values.append(ez)
 
 
 def plot_grid(dx_array, dy_array, Nx, Ny, folder_path, timestamp):
@@ -632,14 +790,14 @@ if __name__ == "__main__":
 
     folder_path, timestamp = create_measurement_folder(base_dir='measurementsFCI')
     
-    Nx, Ny = 101, 101
+    Nx, Ny = 81, 81
     
     sigma = 0.03 * 1e-1
     f_max = (5 / sigma) / (2 * np.pi)
     C0 = 3*1e8
     lambda_min = C0 / f_max
     dx_min = lambda_min / 50
-    dx_max = 5 * dx_min
+    dx_max = 10 * dx_min
     grading_strength = 1
     
     dx_array = generate_graded_array(Nx, dx_min, dx_max, grading_strength)
@@ -657,11 +815,11 @@ if __name__ == "__main__":
     print("="*50)
     
    
-    pml_wx = simulation_width * 0.2
-    pml_wy = simulation_height * 0.2
+    pml_wx = simulation_width * 0.3
+    pml_wy = simulation_height * 0.3
     
-    sim = FCIFDTDPML(Nx=Nx, Ny=Ny, Nt=500,
-                     dx_min=dx_min, dx_max_factor=5.0,
+    sim = FCIFDTDPML(Nx=Nx, Ny=Ny, Nt=300,
+                     dx_min=dx_min, dx_max_factor=10.0,
                      grading_strength=grading_strength,
                      pml_width_x=pml_wx, pml_width_y=pml_wy,
                     )  # Use normalized units for testing

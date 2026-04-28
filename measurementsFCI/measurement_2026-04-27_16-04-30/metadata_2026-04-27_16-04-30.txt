@@ -1,0 +1,12 @@
+timestamp: 2026-04-27_16-04-30
+Nx: 81
+Ny: 81
+Nt: 300
+dt: 5.3350938327319215e-05
+dx_min: 99477.38575683697
+dx_max: 201927.91189606438
+dx_ratio: 2.029887600682008
+source_position: (40, 40)
+save_every: 2
+total_frames: 150
+grading_strenght: 1
