@@ -18,9 +18,8 @@ from sympy import plot
 
 def propagate_matrix(zone):
     matrix= np.array([[np.exp(1j*zone.wavevector*zone.zone_width),                                          0],
-                      [0                                        ,np.exp(-1j*zone.wavevector*zone.zone_width)]
-                     ]
-                      )
+                      [0                                        ,np.exp(-1j*zone.wavevector*zone.zone_width)]]
+                    )
     
     return matrix
 
@@ -30,8 +29,7 @@ def interface_matrix(zoneleft,zoneright):
     diagonalterm = 1 /2 * (1 + kright/kleft)
     offdiagonalterm = 1 /2 * (1 - kright/kleft)
     matrix = np.array([[diagonalterm, offdiagonalterm],
-                      [offdiagonalterm, diagonalterm]
-                     ]
+                      [offdiagonalterm, diagonalterm]]
                       )
     return matrix
 
@@ -54,20 +52,21 @@ def init_absorbing_layer(n,Nlayer):
 def initial_wave_packet(x_coordinates, L, bL, aL, k0):
 
         #initial wave packet shape:
-        x0=5.5*10**(-9)  #center of wave packet (->keep values at edges zero)
-        sigma=(L-bL-aL)/30  #deviation from center (->keep values at edges zero)
-        phi_initial=np.exp(-(x_coordinates-x0)**2/(4*sigma**2)) #wave shape
+        gaussian_center_value_=5.5*10**(-9)  #center of wave packet (->keep values at edges zero)
+        gaussian_width=(L-bL-aL)/30  #deviation from center (->keep values at edges zero)
+        phi_initial=np.exp(-(x_coordinates-gaussian_center_value_)**2/(4*gaussian_width**2)) #wave shape
 
         #normelising wave shape
         norm=np.trapezoid(phi_initial)
-        C=1/norm
-        phi_initial=C*phi_initial
 
-        #splitting initial wave packet in real and imaginary parts
+        phi_normalized=C*phi_initial/norm
+
+       
         phi_initial_real=phi_initial*np.cos(k0*x_coordinates)
         phi_initial_imag=phi_initial*np.sin(k0*x_coordinates)
 
-        return phi_initial, phi_initial_real, phi_initial_imag, C
+        return phi_normalized, phi_initial_real, phi_initial_imag, norm
+
 def init_animation():
         line.set_data([], [])
         # Clear the title on init
@@ -118,54 +117,56 @@ if __name__=="__main__":
     hbar = c.hbar
     m = c.effective_mass
     #domain
-    device_L=25*10**(-9) #meters (length of device)
+    device_Length=25*10**(-9) #meters (length of device)
     bL=15*10**(-9)      #length domain before device
     aL=40*10**(-9)      #length domain after device
-    L=device_L+aL+bL    #length of domain (without absorbing layers)
+    domain_length=device_Length+aL+bL    #length of domain (without absorbing layers)
    
     v=10**7    #m/s  (arbitrary group velocity)
-    T=L/v   #s  (time based on velocity and dimension of space)
-    print(f"total length of domain: {L*1e9} nanometers")
+    T=domain_length/v   #s  (time based on velocity and dimension of space)
+    print(f"total length of domain: {domain_length*1e9} nanometers")
     print(f"total simulation time: {T*1e15} femtoseconds")
 
     #parameters
     k0=m*v/hbar  #wave vector average for wave packet (based on electron momentum)
-    la=(2*np.pi)/k0    #average wavelenth (1/m?)     
-    delta=la/50        #discretisation step (m) (based on average wave length ->prob better to use max wave length + less small needed when going to 4th order)
-    N=int(L/delta)     #amount of space points
-    print(N)
-    Nlayer=3*75+20     #amount of points in absorbing layer
-    layer_distance=Nlayer*delta  #distance corresponding to layer
+    average_wave_length=(2*np.pi)/k0  #[m]  
+    delta_x=average_wave_length/50        #discretisation step (m) (based on average wave length ->prob better to use max wave length + less small needed when going to 4th order)
+    Nodes_device=int(domain_length/delta_x)     #amount of space points
+    print(Nodes_device)
+    Nodes_absorbing_Layers=3*75+20     #amount of points in absorbing layer
+    layer_distance=Nodes_absorbing_Layers*delta_x  #distance corresponding to layer
     print(f"layer distance: {layer_distance*1e9} nanometers")
-    n=np.arange(-Nlayer,N+Nlayer+1)  #the points in domain including absorbing layer
-    x_coordinates=n*delta  # space values(m)
+
+    nodes_domain=np.arange(-Nodes_absorbing_Layers,Nodes_device+Nodes_absorbing_Layers+1)  #the points in domain including absorbing layer
+    x_coordinates=nodes_domain*delta_x  # space values(m)
 
 
     barrier_height_eV =0.6 #height of barrier in eV
     barrier_height_J=barrier_height_eV*c.eVtoJ  # Convert eV to Joules
     barrier_width=5*10**(-9)   #width of both bariers
     a1=barrier_width/2+bL #position midle of first barrier
-    a2=bL+device_L-barrier_width/2 #position midle of seccond barrier
+    a2=bL+device_Length-barrier_width/2 #position midle of seccond barrier
 
     thicknesbeforedevice = bL
     thicknessbarrier1 = barrier_width
-    thicknessbetweenbarriers= device_L - 2*barrier_width
+    thicknessbetweenbarriers= device_Length - 2*barrier_width
     thicknessbarrier2 = barrier_width
     thicknessafterdevice = aL
     thicknesses = [thicknesbeforedevice, thicknessbarrier1, thicknessbetweenbarriers, thicknessbarrier2, thicknessafterdevice]
+    wavevectors = [k0, np.sqrt(2*m*(hbar**2)*barrier_height_J)/hbar, k0, np.sqrt(2*m*(hbar**2)*barrier_height_J)/hbar, k0]  #wave vectors in each zone (based on energy and potential)
 
     zones= []
     for i in range(len(thicknesses)):
         print(f"zone {i} thickness: {thicknesses[i]*1e9} nanometers")
-        zone_i = zone(sum(thicknesses[:i]), sum(thicknesses[:i+1]), k0)  #zone before device
+        zone_i = zone(sum(thicknesses[:i]), sum(thicknesses[:i+1]),wavevectors[i])  #zone before device
         zones.append(zone_i)
 
     print(zones[0].zone_start*1e9, zones[0].zone_end*1e9)
 
-    print(validate_transmission(zones)) # validatie transmission using transfer matrix method
-    Vdamp=init_absorbing_layer(n, Nlayer)  #damping potential
+    print("transmission value:",validate_transmission(zones)) # validatie transmission using transfer matrix method
+    Vdamp=init_absorbing_layer(nodes_domain, Nodes_absorbing_Layers)  #damping potential
 
-    plot_damping_potential(n,Vdamp)
+    plot_damping_potential(nodes_domain,Vdamp)
 
     #potential:
     Vdc_J=0*c.eVtoJ   #DC voltage aplied ->determines hill
@@ -180,7 +181,7 @@ if __name__=="__main__":
     barrier_height_J=barrier_height_eV*c.eVtoJ  # Convert eV to Joules
     w12=5*10**(-9)   #width of both bariers
     a1=w12/2+bL #position midle of first barrier
-    a2=bL+device_L-w12/2 #position midle of seccond barrier
+    a2=bL+device_Length-w12/2 #position midle of seccond barrier
     print(f"position midle of seccond barrier: {a2}")
 
     vbarier1=barrier_height_J*np.heaviside(-np.abs(x_coordinates-a1)+w12/2,1) #barier 1
@@ -195,15 +196,16 @@ if __name__=="__main__":
 
     #test barrier
     E=hbar**2*k0**2/(2*m) #averagle energy(J) (energy used for constructing test potential barrier)
-    a=0.6*L #position (midle of the) barier
-    w=L/20 #width barier
+    a=0.6*domain_length #position (midle of the) barier
+    w=domain_length/20 #width barier
+
     #V=E*np.heaviside(-np.abs(x-a)+w/2,1) #the potential just to test
 
     #free particle
     #V=x*0 #for free particle simulation
 
     
-    phi_initial, phi_initial_real, phi_initial_imag, C =initial_wave_packet(x_coordinates, L, bL, aL, k0)
+    phi_initial, phi_initial_real, phi_initial_imag, C =initial_wave_packet(x_coordinates, domain_length, bL, aL, k0)
 
     #plotting initial wave and potential
     plt.plot(x_coordinates,V*(10**19)*C) #scaling for plotting reasons
@@ -212,7 +214,7 @@ if __name__=="__main__":
 
     #time step
     print("max V:",np.max(V))
-    delta_t=2/(((2*hbar/m)*(1/(delta**2)))+(np.max(V)/hbar)) #stabilaty condition
+    delta_t=2/(((2*hbar/m)*(1/(delta_x**2)))+(np.max(V)/hbar)) #stabilaty condition
     time_steps=int(T/(delta_t))      #amount of time steps in time domain
     print(time_steps)
     t=np.arange(time_steps)*delta_t
@@ -227,8 +229,8 @@ if __name__=="__main__":
 
     #integrate shroedinger equation (seccond order accurate laplacian)
     for i in range(time_steps-1):
-        phi_real[i+1,1:-1]=(phi_real[i,1:-1]*(1+(delta_t/(2*hbar))*Vdamp[1:-1])-(hbar*delta_t/(2*m*delta**2))*(phi_imag[i,2:]+phi_imag[i,:-2]-2*phi_imag[i,1:-1])+V[1:-1]*delta_t/hbar*phi_imag[i,1:-1])/(1-(delta_t/(2*hbar))*Vdamp[1:-1])
-        phi_imag[i+1,1:-1]=(phi_imag[i,1:-1]*(1+(delta_t/(2*hbar))*Vdamp[1:-1])+(hbar*delta_t/(2*m*delta**2))*(phi_real[i+1,2:]+phi_real[i+1,:-2]-2*phi_real[i+1,1:-1])-V[1:-1]*delta_t/hbar*phi_real[i+1,1:-1])/(1-(delta_t/(2*hbar))*Vdamp[1:-1])
+        phi_real[i+1,1:-1]=(phi_real[i,1:-1]*(1+(delta_t/(2*hbar))*Vdamp[1:-1])-(hbar*delta_t/(2*m*delta_x**2))*(phi_imag[i,2:]+phi_imag[i,:-2]-2*phi_imag[i,1:-1])+V[1:-1]*delta_t/hbar*phi_imag[i,1:-1])/(1-(delta_t/(2*hbar))*Vdamp[1:-1])
+        phi_imag[i+1,1:-1]=(phi_imag[i,1:-1]*(1+(delta_t/(2*hbar))*Vdamp[1:-1])+(hbar*delta_t/(2*m*delta_x**2))*(phi_real[i+1,2:]+phi_real[i+1,:-2]-2*phi_real[i+1,1:-1])-V[1:-1]*delta_t/hbar*phi_real[i+1,1:-1])/(1-(delta_t/(2*hbar))*Vdamp[1:-1])
 
     P=np.sqrt(phi_real**2+phi_imag**2)
     #looking at the probabilaty at the edge of the domain
@@ -246,10 +248,12 @@ if __name__=="__main__":
     # 1. Create a title object (empty for now)
     title = ax.set_title('')
 
-
+    potential_line, = ax.plot(x_coordinates, barrier_height_J*10e-19*C, 'b--', lw=1.5, 
+                          alpha=0.7, label='Potential (scaled)')
 
     ani = FuncAnimation(fig, update, frames=np.shape(frames_data)[0], 
                         init_func=init_animation, blit=False, interval=0.5)
+  
     plt.show()
 
     # 1. Your existing data
@@ -260,9 +264,9 @@ if __name__=="__main__":
     # 2. Plotting
     plt.figure(figsize=(8, 4))
     # Use pcolormesh(X, Y, Z)
-    plt.pcolormesh(x_values, y_values, z_data, shading='auto', cmap='viridis')
+    #plt.pcolormesh(x_values, y_values, z_data, shading='auto', cmap='viridis')
 
-    plt.colorbar(label='Intensity')
-    plt.xlabel('time')
-    plt.ylabel('space')
-    plt.show()
+    #plt.colorbar(label='Intensity')
+    #plt.xlabel('time')
+    #plt.ylabel('space')
+    #plt.show()
