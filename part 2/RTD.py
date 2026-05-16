@@ -17,6 +17,7 @@ from matplotlib.animation import FuncAnimation
 #everything in SI units
 class constants:
     def __init__(self):
+
         self.effective_mass=0.023*9.109*10**(-31) #effective mass of the electon
         self.hbar=1.054*10**(-34)   
         self.eVtoJ=1.60217663 * 10**(-19) #one electron volt in joules/ charge of an electron
@@ -35,8 +36,8 @@ def fourier(v,dt):
 
 
 def propagate_matrix(zone):
-    matrix= np.array([[np.exp(1j*zone.wavevector*zone.zone_width),                                          0],
-                      [0                                        ,np.exp(-1j*zone.wavevector*zone.zone_width)]]
+    matrix= np.array([[np.exp(-1j*zone.wavevector*zone.zone_width),                                          0],
+                      [0                                        ,np.exp(1j*zone.wavevector*zone.zone_width)]]
                     )
     
     return matrix
@@ -53,13 +54,19 @@ def interface_matrix(zoneleft,zoneright):
 
 def validate_transmission(zones):
     Matrices = np.eye(2)  # Start with the identity matrix
+
     for i in range(len(zones)-1):
         if zones[i].wavevector != zones[i+1].wavevector:
-            print("warning: wave vector changes at interface between zone",i,"and",i+1)
-        Matrices = Matrices @ interface_matrix(zones[i], zones[i+1]) @ propagate_matrix(zones[i+1])    
+            print("warning: wave vector changes at interface between zone", i, "and", i+1)
+
+        Matrices = Matrices @ interface_matrix(zones[i], zones[i+1])
+
+        # alleen propagatie toevoegen als het niet de laatste zone is
+        if i + 1 < len(zones) - 1:
+            Matrices = Matrices @ propagate_matrix(zones[i+1])
 
     T = 1 / np.abs(Matrices[0, 0])**2
-    return T    
+    return T
 
 def init_absorbing_layer(n,Nlayer,Nspace):
     S=-1.3*10**(-19)  #the sigma chosen negative beceuase otherwise instabilaty still needs tuning
@@ -76,7 +83,7 @@ def initial_wave_packet(x_coordinates, L, bL, aL, k0):
         phi_initial=np.exp(-(x_coordinates-gaussian_center_value_)**2/(4*gaussian_width**2)) #wave shape
 
         #normelising wave shape
-        norm=np.trapezoid(phi_initial)
+        norm = np.sqrt(np.trapezoid(np.abs(phi_initial)**2, x_coordinates))
 
         phi_normalized=phi_initial/norm
 
@@ -107,11 +114,12 @@ def update(frame):
     return line, title
 
 def plot_damping_potential(n,Vdamp):
-    plt.plot(n*delta_x,Vdamp)
-    plt.title("the damping potential")
-    plt.xlabel("index point in domain")
-    plt.ylabel("absorbing potential")
-    plt.show()
+     n = n
+    # plt.plot(n*delta_x,Vdamp)
+    # plt.title("the damping potential")
+    # plt.xlabel("index point in domain")
+    # plt.ylabel("absorbing potential")
+    # plt.show()
 
 def init_potential_barrier(x, a, w, E):
     return E * np.heaviside(-np.abs(x - a) + w / 2, 1)
@@ -172,7 +180,7 @@ if __name__=="__main__":
     thicknessbarrier2 = barrier_width
     thicknessafterdevice = aL
     thicknesses = [thicknesbeforedevice, thicknessbarrier1, thicknessbetweenbarriers, thicknessbarrier2, thicknessafterdevice]
-    wavevectors = [k0, np.sqrt(2*m*(hbar**2)*barrier_height_J)/hbar, k0, np.sqrt(2*m*(hbar**2)*barrier_height_J)/hbar, k0]  #wave vectors in each zone (based on energy and potential)
+    wavevectors = [k0, np.sqrt(2*m*(Energy_current_J-barrier_height_J)+0j)/hbar, k0, np.sqrt(2*m*(Energy_current_J-barrier_height_J)+0j)/hbar, k0]  #wave vectors in each zone (based on energy and potential)
 
     zones= []
     for i in range(len(thicknesses)):
@@ -210,11 +218,11 @@ if __name__=="__main__":
 
     #potential of device
     vdevice=v_volatage+vbarier1+vbarier2+np.ones_like(x_coordinates)*Vdc_J   #total potential across barrier
-    plt.plot(x_coordinates,vdevice)
-    plt.title("vdevice")
-    plt.xlabel("position (m)")
-    plt.ylabel("potential energy (J)")
-    plt.show()
+    # plt.plot(x_coordinates,vdevice)
+    # plt.title("vdevice")
+    # plt.xlabel("position (m)")
+    # plt.ylabel("potential energy (J)")
+    # plt.show()
 
     V=vdevice
 
@@ -238,27 +246,29 @@ if __name__=="__main__":
     def solver(V):
         phi_initial, phi_initial_real, phi_initial_imag, C,sigma =initial_wave_packet(x_coordinates, domain_length, bL, aL, k0)
 
+
+
         #check momentum content for debugginh
         phi=phi_initial_imag*1j+phi_initial_real
         f,PHI=fourier(phi,delta_x)
         k=2*np.pi*f
         E=k**2*c.hbar**2/(2*c.effective_mass)
-        plt.title("momentum content of initial wave")
-        plt.plot(k,np.abs(PHI),label="fft")
+        # plt.title("momentum content of initial wave")
+        # plt.plot(k,np.abs(PHI),label="fft")
         klim=k0+3/(sigma*np.sqrt(2))
         Elim=klim**2*c.hbar**2/(2*c.effective_mass)
-        plt.axvline(x=klim)
-        plt.axvline(x=k0)
-        plt.legend()
-        plt.show()
+        # plt.axvline(x=klim)
+        # plt.axvline(x=k0)
+        # plt.legend()
+        #plt.show()
 
 
 
 
         #plotting initial wave and potential
-        plt.plot(x_coordinates,V*(10**19)*C) #scaling for plotting reasons
-        plt.plot(x_coordinates,phi_initial)
-        plt.show()
+        # plt.plot(x_coordinates,V*(10**19)*C) #scaling for plotting reasons
+        # plt.plot(x_coordinates,phi_initial)
+        #plt.show()
 
         #time step
         print("max V:",np.max(vdevice))
@@ -266,6 +276,8 @@ if __name__=="__main__":
         time_steps=int(T/(delta_t))      #amount of time steps in time domain
         print("time_steps:",time_steps)
         t=np.arange(time_steps)*delta_t
+        
+
 
 
 
@@ -280,13 +292,21 @@ if __name__=="__main__":
             phi_real[i+1,1:-1]=(phi_real[i,1:-1]*(1+(delta_t/(2*hbar))*Vdamp[1:-1])-(hbar*delta_t/(2*m*delta_x**2))*(phi_imag[i,2:]+phi_imag[i,:-2]-2*phi_imag[i,1:-1])+V[1:-1]*delta_t/hbar*phi_imag[i,1:-1])/(1-(delta_t/(2*hbar))*Vdamp[1:-1])
             phi_imag[i+1,1:-1]=(phi_imag[i,1:-1]*(1+(delta_t/(2*hbar))*Vdamp[1:-1])+(hbar*delta_t/(2*m*delta_x**2))*(phi_real[i+1,2:]+phi_real[i+1,:-2]-2*phi_real[i+1,1:-1])-V[1:-1]*delta_t/hbar*phi_real[i+1,1:-1])/(1-(delta_t/(2*hbar))*Vdamp[1:-1])
 
-        P=np.sqrt(phi_real**2+phi_imag**2)
+        P=phi_real**2+phi_imag**2
+        probability = np.trapezoid(
+            phi_real[15000,:]**2 + phi_imag[15000,:]**2,
+            x_coordinates
+        )
+
+        print(probability)
+
         print("point of observation,",bL+device_Length,domain_length+layer_distance)
+        
         #looking at the probabilaty at the edge of the domain
-        phi_real1=phi_real[:,int((bL+device_Length)/delta_x)]
-        phi_real2=phi_real[:,int((bL+device_Length)/delta_x)+1]
-        phi_imag1=phi_imag[:,int((bL+device_Length)/delta_x)]
-        phi_imag2=phi_imag[:,int((bL+device_Length)/delta_x)+1]
+        phi_real1=phi_real[:,int((bL+device_Length+2*bL)/delta_x)]
+        phi_real2=phi_real[:,int((bL+device_Length+2*bL)/delta_x)+1]
+        phi_imag1=phi_imag[:,int((bL+device_Length+2*bL)/delta_x)]
+        phi_imag2=phi_imag[:,int((bL+device_Length+2*bL)/delta_x)+1]
         
         f,Phi_real1=fourier(phi_real1,delta_t)
         f,Phi_real2=fourier(phi_real2,delta_t)
@@ -301,7 +321,7 @@ if __name__=="__main__":
     E2,J_bar,t,P_bar,C_bar=solver(vdevice)
     
     #animating simulation:
-    frames_data=P_bar[::10]
+    frames_data=P_bar[::50]
     fig, ax = plt.subplots()
     ax.set_xlim(-layer_distance, domain_length+layer_distance)
     ax.set_ylim(0, np.max(frames_data))
@@ -309,8 +329,8 @@ if __name__=="__main__":
     # 1. Create a title object (empty for now)
     title = ax.set_title('')
 
-    potential_line, = ax.plot(x_coordinates, barrier_height_J*10e-19*C_bar*np.ones_like(x_coordinates), 'b--', lw=1.5, 
-                          alpha=0.7, label='Potential (scaled)')
+    # potential_line, = ax.plot(x_coordinates, barrier_height_J*10e-19*C_bar*np.ones_like(x_coordinates), 'b--', lw=1.5, 
+    #                       alpha=0.7, label='Potential (scaled)')
 
     ani = FuncAnimation(fig, update, frames=np.shape(frames_data)[0], 
                         init_func=init_animation, blit=False, interval=0.5)
@@ -325,8 +345,8 @@ if __name__=="__main__":
     plt.title("wave function right after the seccond barrier")
     plt.xlabel("time (s)")
     plt.ylabel("wave function sqrt(1/m)")
-    plt.plot(t,P_free[:,int((bL+device_Length)/delta_x)],label="no barrier")
-    plt.plot(t,P_bar[:,int((bL+device_Length)/delta_x)],label="with barrier")
+    # plt.plot(t,P_free[:,int((bL+device_Length+2*bL)/delta_x)],label="no barrier")
+    plt.plot(t,P_bar[:,int((bL+device_Length+2*bL)/delta_x)],label="with barrier")
     plt.legend()
     plt.show()
 
