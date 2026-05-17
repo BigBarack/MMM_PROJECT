@@ -69,18 +69,21 @@ def validate_transmission(zones):
     return T
 
 def init_absorbing_layer(n,Nlayer,Nspace):
-    S=-1.3*10**(-19)  #the sigma chosen negative beceuase otherwise instabilaty still needs tuning
-    deg=3   #degree of polynomial
+    S = -1.3*10**(-19)  #the sigma chosen negative beceuase otherwise instabilaty still needs tuning
+    deg = 3   #degree of polynomial
     Vdamp=np.heaviside(-n,1)*S*((-n)/Nlayer)**deg+np.heaviside(n-Nspace,1)*S*((n-Nspace)/Nlayer)**deg  #damping potential
     
+
     return Vdamp
 
 def initial_wave_packet(x_coordinates, L, bL, aL, k0):
 
         #initial wave packet shape:
-        gaussian_center_value_=5.5*10**(-9)  #center of wave packet (->keep values at edges zero)
-        gaussian_width=(L-bL-aL)/30  #deviation from center (->keep values at edges zero)
+        gaussian_center_value_=bL/2  #center of wave packet (->keep values at edges zero)
+        gaussian_width=(L-bL-aL)/2.5  #deviation from center (->keep values at edges zero)
         phi_initial=np.exp(-(x_coordinates-gaussian_center_value_)**2/(4*gaussian_width**2)) #wave shape
+        print(phi_initial[Nodes_absorbing_Layers+int(bL/delta_x)],"moet nul blijven")
+        print(phi_initial[Nodes_absorbing_Layers],"moet nul blijven")
 
         #normelising wave shape
         norm = np.sqrt(np.trapezoid(np.abs(phi_initial)**2, x_coordinates))
@@ -143,33 +146,34 @@ if __name__=="__main__":
     m = c.effective_mass
     #domain
     device_Length=25*10**(-9) #meters (length of device)
-    bL=15*10**(-9)      #length domain before device
-    aL=40*10**(-9)      #length domain after device
+    bL=300*10**(-9)      #length domain before device
+    aL=100*10**(-9)      #length domain after device
     domain_length=device_Length+aL+bL    #length of domain (without absorbing layers)
-    Energy_current_eV = 4*1.6 #eV
+    Energy_current_eV = 0.4 #eV
     Energy_current_J = Energy_current_eV * c.eVtoJ #J
     k0 = np.sqrt(2*m*Energy_current_J)/hbar
     v=hbar*k0/m
-    T=2*domain_length/v   #s  (time based on velocity and dimension of space)
-    print(f"total length of domain: {domain_length*1e9} nanometers")
-    print(f"total simulation time: {T*1e15} femtoseconds")
 
     #parameters
     
     average_wave_length=(2*np.pi)/k0  #[m]  
-    delta_x=average_wave_length/50        #discretisation step (m) (based on average wave length ->prob better to use max wave length + less small needed when going to 4th order)
+    delta_x=average_wave_length/18        #discretisation step (m) (based on average wave length ->prob better to use max wave length + less small needed when going to 4th order)
     Nodes_device=int(domain_length/delta_x)     #amount of space points
     print("nodes device",Nodes_device)
     Nodes_absorbing_Layers=1500     #amount of points in absorbing layer
     layer_distance=Nodes_absorbing_Layers*delta_x  #distance corresponding to layer
     print(f"layer distance: {layer_distance*1e9} nanometers")
 
+    T=2*(domain_length+2*layer_distance)/v   #s  (time based on velocity and dimension of space)
+    print(f"total length of domain: {domain_length*1e9} nanometers")
+    print(f"total simulation time: {T*1e15} femtoseconds")
+
     nodes_domain=np.arange(-Nodes_absorbing_Layers,Nodes_device+Nodes_absorbing_Layers+1)  #the points in domain including absorbing layer
     x_coordinates=nodes_domain*delta_x  # space values(m)
 
 
-    barrier_height_eV =0.6 #height of barrier in eV
-    barrier_height_J=barrier_height_eV*c.eVtoJ  # Convert eV to Joules
+    barrier_height_eV = 0.6 #height of barrier in eV
+    barrier_height_J = barrier_height_eV*c.eVtoJ  # Convert eV to Joules
     barrier_width=5*10**(-9)   #width of both bariers
     a1=barrier_width/2+bL #position midle of first barrier
     a2=bL+device_Length-barrier_width/2 #position midle of seccond barrier
@@ -246,6 +250,9 @@ if __name__=="__main__":
     def solver(V):
         phi_initial, phi_initial_real, phi_initial_imag, C,sigma =initial_wave_packet(x_coordinates, domain_length, bL, aL, k0)
 
+        delta_E = hbar**2 * k0 / (m * sigma) / c.eVtoJ
+        print(f"energiebreedte golfpakket: {delta_E} eV")
+
 
 
         #check momentum content for debugginh
@@ -260,7 +267,7 @@ if __name__=="__main__":
         # plt.axvline(x=klim)
         # plt.axvline(x=k0)
         # plt.legend()
-        #plt.show()
+        # plt.show()
 
 
 
@@ -272,7 +279,7 @@ if __name__=="__main__":
 
         #time step
         print("max V:",np.max(vdevice))
-        delta_t=2/(((2*hbar/m)*(1/(delta_x**2)))+(np.max(vdevice)/hbar)) #stabilaty condition
+        delta_t=2/((((2*hbar/m)*(1/(delta_x**2)))+(np.max(vdevice)/hbar))) #stabilaty condition
         time_steps=int(T/(delta_t))      #amount of time steps in time domain
         print("time_steps:",time_steps)
         t=np.arange(time_steps)*delta_t
@@ -294,49 +301,121 @@ if __name__=="__main__":
 
         P=phi_real**2+phi_imag**2
         probability = np.trapezoid(
-            phi_real[15000,:]**2 + phi_imag[15000,:]**2,
+            phi_real[150,:]**2 + phi_imag[150,:]**2,
             x_coordinates
         )
 
         print(probability)
 
         print("point of observation,",bL+device_Length,domain_length+layer_distance)
-        
+
+        obs_idx = Nodes_absorbing_Layers+int((bL+device_Length+aL/2)/delta_x)
+
         #looking at the probabilaty at the edge of the domain
-        phi_real1=phi_real[:,int((bL+device_Length+2*bL)/delta_x)]
-        phi_real2=phi_real[:,int((bL+device_Length+2*bL)/delta_x)+1]
-        phi_imag1=phi_imag[:,int((bL+device_Length+2*bL)/delta_x)]
-        phi_imag2=phi_imag[:,int((bL+device_Length+2*bL)/delta_x)+1]
+        phi_real1=phi_real[:,obs_idx]
+        phi_real2=phi_real[:,obs_idx+1]
+        phi_imag1=phi_imag[:,obs_idx]
+        phi_imag2=phi_imag[:,obs_idx+1]
+
+        psi1 = phi_real1+ 1j * phi_imag1
+        psi2 = phi_real2+ 1j * phi_imag2
+
+        f, PSI1 = fourier(psi1, delta_t)
+        f, PSI2 = fourier(psi2, delta_t)
+
         
-        f,Phi_real1=fourier(phi_real1,delta_t)
-        f,Phi_real2=fourier(phi_real2,delta_t)
-        f,Phi_imag1=fourier(phi_imag1,delta_t)
-        f,Phi_imag2=fourier(phi_imag2,delta_t)
-        E=2*np.pi*f*hbar
-        J=hbar*c.eVtoJ*(Phi_real1*Phi_imag2-Phi_real2*Phi_imag1)/(m*delta_x)
-        return E,J,t,P,C
+        # f,Phi_real1=fourier(phi_real1,delta_t)
+        # f,Phi_real2=fourier(phi_real2,delta_t)
+        # f,Phi_imag1=fourier(phi_imag1,delta_t)
+        # f,Phi_imag2=fourier(phi_imag2,delta_t)
+        P_energy_domain = np.abs(PSI1)**2
+        E= 2*np.pi*f*hbar
+        J = hbar * np.real(-1.j *np.conj(PSI1) * (PSI2 - PSI1) / delta_x) / m
+        return E,J,t,P,C, P_energy_domain, sigma
 
 
-    E1,J_free,t,P_free,C_free=solver(0*x_coordinates)
-    E2,J_bar,t,P_bar,C_bar=solver(vdevice)
+    E1,J_free,t,P_free,C_free, P_free_E,sigma=solver(0*x_coordinates)
+    E2,J_bar,t,P_bar,C_bar, P_bar_E,sigma=solver(vdevice)
     
-    #animating simulation:
-    frames_data=P_bar[::50]
+
+    # animating simulation:
+    frames_data = P_bar[::30]
+    delta_t=2/(((2*hbar/m)*(1/(delta_x**2)))+(np.max(vdevice)/hbar)) #stabilaty condition
+    dt_simulation = delta_t * 30*1e15  # tijdstap per frame (aangezien je elke 30e frame neemt)
+
+    # Bereken het observatiepunt
+    obs_index = Nodes_absorbing_Layers + int((bL + device_Length + aL/2)/delta_x)
+    obs_position = x_coordinates[obs_index]
+
     fig, ax = plt.subplots()
-    ax.set_xlim(-layer_distance, domain_length+layer_distance)
-    ax.set_ylim(0, np.max(frames_data))
-    line, = ax.plot([], [], lw=2, color='firebrick')
-    # 1. Create a title object (empty for now)
+
+    ax.set_xlim(-layer_distance, domain_length + layer_distance)
+    ax.set_ylim(0, np.max(frames_data) * 1.1)
+
+    # Wave packet lijn
+    line, = ax.plot([], [], lw=2, color='firebrick', label='Wave packet')
+
+    # Observatiepunt verticale lijn
+    obs_line = ax.axvline(x=obs_position, color='green', linestyle='--', 
+                        linewidth=2, alpha=0.8, label='Observation point')
+
+    # titel
     title = ax.set_title('')
 
-    # potential_line, = ax.plot(x_coordinates, barrier_height_J*10e-19*C_bar*np.ones_like(x_coordinates), 'b--', lw=1.5, 
-    #                       alpha=0.7, label='Potential (scaled)')
+    # ===== potential/barriers toevoegen =====
 
-    ani = FuncAnimation(fig, update, frames=np.shape(frames_data)[0], 
-                        init_func=init_animation, blit=False, interval=0.5)
-  
+    # schaal de potentiaal zodat hij zichtbaar is
+    V_scaled = vdevice * (
+        np.max(frames_data[0]) /
+        (np.max(np.abs(vdevice)) + 1e-30)
+    ) * 0.3
+
+    # plot van de barriers/potentiaal
+    potential_line, = ax.plot(
+        x_coordinates,
+        V_scaled,
+        'b--',
+        lw=1.5,
+        alpha=0.7,
+        label='Potential'
+    )
+
+    # Tijd tekst
+    time_text = ax.text(0.02, 0.95, '', transform=ax.transAxes, 
+                        fontsize=12, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    ax.legend()
+
+    # =======================================
+
+    def init_animation():
+        line.set_data([], [])
+        time_text.set_text('')
+        return line, time_text
+
+    def update(frame):
+        # update wave packet
+        line.set_data(x_coordinates, frames_data[frame])
+        
+        # update tijd
+        current_time = frame * dt_simulation
+        time_text.set_text(f'Tijd: {current_time:.4f} s')
+        
+        # update titel (optioneel)
+        title.set_text(f'Golfpakket propagatie - Frame {frame+1}/{np.shape(frames_data)[0]}')
+        
+        return line, time_text, title
+
+    ani = FuncAnimation(
+        fig,
+        update,
+        frames=np.shape(frames_data)[0],
+        init_func=init_animation,
+        blit=False,
+        interval=0.5
+    )
     plt.show()
-
 
 
 
@@ -345,8 +424,8 @@ if __name__=="__main__":
     plt.title("wave function right after the seccond barrier")
     plt.xlabel("time (s)")
     plt.ylabel("wave function sqrt(1/m)")
-    # plt.plot(t,P_free[:,int((bL+device_Length+2*bL)/delta_x)],label="no barrier")
-    plt.plot(t,P_bar[:,int((bL+device_Length+2*bL)/delta_x)],label="with barrier")
+    plt.plot(t,P_free[:,Nodes_absorbing_Layers+int((bL+device_Length+aL/2)/delta_x)],label="no barrier")
+    plt.plot(t,P_bar[:,Nodes_absorbing_Layers+int((bL+device_Length+aL/2)/delta_x)],label="with barrier")
     plt.legend()
     plt.show()
 
@@ -354,19 +433,26 @@ if __name__=="__main__":
     plt.title("wave functions in energy domain")
     plt.xlabel("Energy (eV)")
     plt.ylabel("wave function sqrt(1/m)")
-    plt.plot(E1[(E1>-lim) & (E1<lim)]/c.eVtoJ,np.abs(J_free[(E1>-lim) & (E1<lim)]),label="no barrier")
-    plt.plot(E2[(E1>-lim) & (E1<lim)]/c.eVtoJ,np.abs(J_bar[(E1>-lim) & (E1<lim)]),label="with barrier")
+    plt.plot(E1[(E1>0) & (E1<lim)]/c.eVtoJ,np.abs(J_free[(E1>0) & (E1<lim)]),label="no barrier")
+    # Voeg verticale lijn toe bij 0.9 eV
+    plt.axvline(x=Energy_current_eV, color='red', linestyle='--', linewidth=2, 
+            label=f'Energy = {Energy_current_eV} eV')
+    plt.plot(E2[(E2>0) & (E2<lim)]/c.eVtoJ,np.abs(J_bar[(E2>0) & (E2<lim)]),label="with barrier")
     plt.legend()
     plt.show()
+
+    E_center = k0**2 * c.hbar**2 / (2 * c.effective_mass)/ c.eVtoJ
+    E_width = 3 * (1/(2*sigma)) * c.hbar**2 * k0 / c.effective_mass / c.eVtoJ # Geschatte energie spreiding
 
     plt.title("transmission")
     plt.xlabel("Energy(eV)")
     plt.ylabel("Transmission")
-    plt.plot(E1[(E1>-lim) & (E1<lim)]/c.eVtoJ,np.abs(J_bar[(E1>-lim) & (E1<lim)]/J_free[(E1>-lim) & (E1<lim)]),label="nummerical")
-    plt.plot(e,Trans,label="analytical")
+    plt.plot(E1[(E1>-lim) & (E1<lim)]/c.eVtoJ, J_bar[(E1>-lim) & (E1<lim)]/J_free[(E1>-lim) & (E1<lim)], label="numerical")
+    plt.plot(e, Trans, label="analytical")
+    plt.ylim(0, 1)
+    plt.xlim(E_center-E_width, E_center+E_width)  # Beperk x-as van 0 tot 2 eV
     plt.legend()
     plt.show()
-    
 
 
 
